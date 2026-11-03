@@ -422,6 +422,41 @@
     .review .no { color: var(--wrong); font-weight: 800; }
     .review .ans { color: var(--muted); display: block; }
 
+    .review-top { display: flex; justify-content: flex-start; margin-bottom: 1rem; }
+    .review-detail {
+      list-style: none;
+      padding: 0;
+      margin: 0 0 1.5rem;
+      display: grid;
+      gap: 1rem;
+    }
+    .review-card {
+      padding: 1rem;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.05);
+      border-left: 4px solid var(--wrong);
+    }
+    .review-card.is-ok { border-left-color: var(--correct); }
+    .review-card h2 { font-size: 1.05rem; margin: 0 0 0.75rem; line-height: 1.4; }
+    .review-options { list-style: none; padding: 0; margin: 0; display: grid; gap: 0.4rem; }
+    .review-options li {
+      display: flex;
+      gap: 0.6rem;
+      align-items: center;
+      padding: 0.5rem 0.75rem;
+      border-radius: 8px;
+      border: 2px solid transparent;
+      color: var(--muted);
+    }
+    .review-options .key { font-weight: 800; min-width: 1.2rem; }
+    .review-options .text { flex: 1; }
+    .review-options .mark { font-weight: 800; }
+    .review-options .tag { font-size: 0.8rem; font-weight: 700; color: var(--muted); }
+    .review-options li.correct { border-color: var(--correct); color: inherit; }
+    .review-options li.correct .mark { color: var(--correct); }
+    .review-options li.wrong { border-color: var(--wrong); color: inherit; }
+    .review-options li.wrong .mark { color: var(--wrong); }
+
     .results-actions { display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap; }
 
     [hidden] { display: none !important; }
@@ -439,6 +474,9 @@
 
     @media (forced-colors: active) {
       .option.correct, .option.wrong { border-width: 4px; }
+      .review-options li { border-color: CanvasText; }
+      .review-options li.correct, .review-options li.wrong { border-width: 4px; border-color: Highlight; }
+      .review-card { border: 1px solid CanvasText; }
       .progress-fill { background: Highlight; }
     }
   </style>
@@ -502,7 +540,22 @@
       <h2 class="sr-only" data-i18n="review">Answer review</h2>
       <ol class="review" id="review"></ol>
       <div class="results-actions">
+        <button id="review-btn" class="btn secondary" type="button"><span data-i18n="reviewOpen">Review answers</span> <span aria-hidden="true">📋</span></button>
         <button id="restart-btn" class="btn" type="button"><span data-i18n="restart">Play again</span> <span aria-hidden="true">🔁</span></button>
+      </div>
+    </section>
+
+    <!-- Review screen -->
+    <section id="review-screen" class="card" aria-labelledby="review-title" hidden>
+      <div class="review-top">
+        <button id="review-back-top" class="btn secondary" type="button"><span aria-hidden="true">←</span> <span data-i18n="backToResults">Back to results</span></button>
+      </div>
+      <h1 id="review-title" tabindex="-1" data-i18n="reviewTitle">Your answers</h1>
+      <p class="subtitle" data-i18n="reviewIntro">Every question with the answer you chose.</p>
+      <ol class="review-detail" id="review-detail"></ol>
+      <div class="results-actions">
+        <button id="review-back" class="btn secondary" type="button"><span aria-hidden="true">←</span> <span data-i18n="backToResults">Back to results</span></button>
+        <button id="review-restart-btn" class="btn" type="button"><span data-i18n="restart">Play again</span> <span aria-hidden="true">🔁</span></button>
       </div>
     </section>
 
@@ -659,6 +712,11 @@
           rulesKeyboard: 'Keyboard friendly: press 1–4 or A–D to answer, Enter for next',
           start: 'Launch quiz', complete: 'Mission Complete!',
           review: 'Answer review', restart: 'Play again',
+          reviewOpen: 'Review answers', reviewTitle: 'Your answers',
+          reviewIntro: 'Every question with the answer you chose.',
+          backToResults: 'Back to results',
+          chosenCorrect: 'Your answer, correct', chosenWrong: 'Your answer, incorrect',
+          correctNotChosen: 'Correct answer',
           progress: 'Quiz progress', choices: 'Answer choices',
           count: (n) => `Question ${n} of ${TOTAL}`,
           progressText: (n) => `${n} of ${TOTAL} questions answered`,
@@ -688,6 +746,11 @@
           rulesKeyboard: '키보드 사용: 1–4 또는 A–D로 답 선택, Enter로 다음 문제',
           start: '퀴즈 시작', complete: '탐사 임무 완료!',
           review: '정답 및 선택한 답 확인', restart: '다시 도전',
+          reviewOpen: '답안 다시 보기', reviewTitle: '내 답안',
+          reviewIntro: '모든 문제와 내가 선택한 답을 확인하세요.',
+          backToResults: '결과로 돌아가기',
+          chosenCorrect: '선택한 답, 정답', chosenWrong: '선택한 답, 오답',
+          correctNotChosen: '정답',
           progress: '퀴즈 진행률', choices: '답 선택지',
           count: (n) => `총 ${TOTAL}문제 중 ${n}번째 문제`,
           progressText: (n) => `총 ${TOTAL}문제 중 ${n}문제 응답 완료`,
@@ -717,6 +780,7 @@
       const startScreen = $('start-screen');
       const quizScreen = $('quiz-screen');
       const resultsScreen = $('results-screen');
+      const reviewScreen = $('review-screen');
       const qCount = $('q-count');
       const scorePill = $('score-pill');
       const scoreText = $('score-text');
@@ -761,6 +825,7 @@
         if (!quizScreen.hidden) renderQuestion(false);
         if (!resultsScreen.hidden) renderResults();
         else announcer.textContent = '';
+        if (!reviewScreen.hidden) renderReview();
       }
 
       // Decorative starfield
@@ -782,7 +847,7 @@
       })();
 
       function show(screen) {
-        [startScreen, quizScreen, resultsScreen].forEach((s) => { s.hidden = s !== screen; });
+        [startScreen, quizScreen, resultsScreen, reviewScreen].forEach((s) => { s.hidden = s !== screen; });
         screen.classList.remove('fade-in');
         void screen.offsetWidth;
         screen.classList.add('fade-in');
@@ -961,7 +1026,7 @@
         $('results-title').focus({ preventScroll: true });
       }
 
-      function renderResults() {
+      function renderResults(announce = true) {
         const text = TEXT[language];
         const pct = Math.round((score / TOTAL) * 100);
         $('ring-score').textContent = `${score}/${TOTAL}`;
@@ -995,7 +1060,78 @@
           review.appendChild(li);
         });
 
-        announcer.textContent = text.announcement(score, rank.replace(/^\S+\s/, ''));
+        announcer.textContent = announce
+          ? text.announcement(score, rank.replace(/^\S+\s/, ''))
+          : '';
+      }
+
+      function renderReview() {
+        const text = TEXT[language];
+        const list = $('review-detail');
+        list.innerHTML = '';
+        history.forEach((h, i) => {
+          const item = questionAt(i);
+          const card = document.createElement('li');
+          card.className = 'review-card' + (h.ok ? ' is-ok' : '');
+
+          const heading = document.createElement('h2');
+          const status = document.createElement('span');
+          status.className = 'sr-only';
+          status.textContent = h.ok ? text.correct : text.incorrect;
+          heading.append(status, `${i + 1}. ${item.q}`);
+
+          const opts = document.createElement('ul');
+          opts.className = 'review-options';
+          item.options.forEach((optText, j) => {
+            const li = document.createElement('li');
+            const isAnswer = j === item.answer;
+            const isChosen = j === h.chosen;
+            let mark = '';
+            let label = '';
+            if (isChosen && isAnswer) { li.className = 'correct'; mark = '✓'; label = text.chosenCorrect; }
+            else if (isChosen) { li.className = 'wrong'; mark = '✗'; label = text.chosenWrong; }
+            else if (isAnswer) { li.className = 'correct'; mark = '✓'; label = text.correctNotChosen; }
+
+            const key = document.createElement('span');
+            key.className = 'key';
+            key.textContent = LETTERS[j];
+            const body = document.createElement('span');
+            body.className = 'text';
+            body.textContent = optText;
+            li.append(key, body);
+            if (mark) {
+              const m = document.createElement('span');
+              m.className = 'mark';
+              m.setAttribute('aria-hidden', 'true');
+              m.textContent = mark;
+              const sep = document.createElement('span');
+              sep.className = 'sr-only';
+              sep.textContent = ', ';
+              const tag = document.createElement('span');
+              tag.className = 'tag';
+              tag.textContent = label;
+              li.append(sep, tag, m);
+            }
+            opts.appendChild(li);
+          });
+
+          card.append(heading, opts);
+          list.appendChild(card);
+        });
+      }
+
+      function showReview() {
+        announcer.textContent = '';
+        show(reviewScreen);
+        renderReview();
+        window.scrollTo(0, 0);
+        $('review-title').focus({ preventScroll: true });
+      }
+
+      function backToResults() {
+        show(resultsScreen);
+        renderResults(false);
+        $('review-btn').focus();
       }
 
       // Keyboard shortcuts: 1-4 / A-D to answer, Enter / N for next
@@ -1015,6 +1151,10 @@
       $('start-btn').addEventListener('click', startQuiz);
       nextBtn.addEventListener('click', next);
       $('restart-btn').addEventListener('click', startQuiz);
+      $('review-btn').addEventListener('click', showReview);
+      $('review-back').addEventListener('click', backToResults);
+      $('review-back-top').addEventListener('click', backToResults);
+      $('review-restart-btn').addEventListener('click', startQuiz);
       $('language-btn').addEventListener('click', () => {
         language = language === 'en' ? 'ko' : 'en';
         applyLanguage();
