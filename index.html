@@ -504,6 +504,7 @@
 
     <!-- Quiz screen -->
     <section id="quiz-screen" class="card" aria-labelledby="question-text" hidden>
+      <p id="practice-label" class="subtitle" data-i18n="practice" hidden>Practice round</p>
       <div class="hud">
         <span class="q-count" id="q-count">Question 1 of 10</span>
         <span class="score-pill" id="score-pill" aria-live="polite" aria-atomic="true">
@@ -531,7 +532,7 @@
 
     <!-- Results screen -->
     <section id="results-screen" class="card results" aria-labelledby="results-title" hidden>
-      <h1 id="results-title" tabindex="-1" data-i18n="complete">Mission Complete!</h1>
+      <h1 id="results-title" tabindex="-1">Mission Complete!</h1>
       <div class="ring" id="ring" aria-hidden="true">
         <div class="ring-inner"><div><span id="ring-score">0/10</span><small id="ring-pct">0%</small></div></div>
       </div>
@@ -541,6 +542,7 @@
       <ol class="review" id="review"></ol>
       <div class="results-actions">
         <button id="review-btn" class="btn secondary" type="button"><span data-i18n="reviewOpen">Review answers</span> <span aria-hidden="true">📋</span></button>
+        <button id="practice-btn" class="btn secondary" type="button" data-i18n="retryWrong" hidden>Retry missed questions</button>
         <button id="restart-btn" class="btn" type="button"><span data-i18n="restart">Play again</span> <span aria-hidden="true">🔁</span></button>
       </div>
     </section>
@@ -555,6 +557,7 @@
       <ol class="review-detail" id="review-detail"></ol>
       <div class="results-actions">
         <button id="review-back" class="btn secondary" type="button"><span aria-hidden="true">←</span> <span data-i18n="backToResults">Back to results</span></button>
+        <button id="review-practice-btn" class="btn secondary" type="button" data-i18n="retryWrong" hidden>Retry missed questions</button>
         <button id="review-restart-btn" class="btn" type="button"><span data-i18n="restart">Play again</span> <span aria-hidden="true">🔁</span></button>
       </div>
     </section>
@@ -712,14 +715,18 @@
           rulesKeyboard: 'Keyboard friendly: press 1–4 or A–D to answer, Enter for next',
           start: 'Launch quiz', complete: 'Mission Complete!',
           review: 'Answer review', restart: 'Play again',
+          practice: 'Practice round', practiceComplete: 'Practice complete!',
+          retryWrong: 'Retry missed questions', fullQuiz: 'Start full quiz',
+          practiceProgress: 'Practice progress',
+          practiceSummary: (n, total) => `You answered ${n} of ${total} correctly. Practice does not affect your quiz score.`,
           reviewOpen: 'Review answers', reviewTitle: 'Your answers',
           reviewIntro: 'Every question with the answer you chose.',
           backToResults: 'Back to results',
           chosenCorrect: 'Your answer, correct', chosenWrong: 'Your answer, incorrect',
           correctNotChosen: 'Correct answer',
           progress: 'Quiz progress', choices: 'Answer choices',
-          count: (n) => `Question ${n} of ${TOTAL}`,
-          progressText: (n) => `${n} of ${TOTAL} questions answered`,
+          count: (n, total) => `Question ${n} of ${total}`,
+          progressText: (n, total) => `${n} of ${total} questions answered`,
           score: (n) => `Score: ${n}`,
           correctLabel: 'correct answer', wrongLabel: 'your answer, incorrect',
           good: '✓ Correct! Stellar work.',
@@ -746,14 +753,18 @@
           rulesKeyboard: '키보드 사용: 1–4 또는 A–D로 답 선택, Enter로 다음 문제',
           start: '퀴즈 시작', complete: '탐사 임무 완료!',
           review: '정답 및 선택한 답 확인', restart: '다시 도전',
+          practice: '연습 라운드', practiceComplete: '연습 완료!',
+          retryWrong: '틀린 문제 다시 풀기', fullQuiz: '전체 퀴즈 시작',
+          practiceProgress: '연습 진행률',
+          practiceSummary: (n, total) => `총 ${total}문제 중 ${n}문제를 맞혔습니다. 연습 결과는 본 퀴즈 점수에 영향을 주지 않습니다.`,
           reviewOpen: '답안 다시 보기', reviewTitle: '내 답안',
           reviewIntro: '모든 문제와 내가 선택한 답을 확인하세요.',
           backToResults: '결과로 돌아가기',
           chosenCorrect: '선택한 답, 정답', chosenWrong: '선택한 답, 오답',
           correctNotChosen: '정답',
           progress: '퀴즈 진행률', choices: '답 선택지',
-          count: (n) => `총 ${TOTAL}문제 중 ${n}번째 문제`,
-          progressText: (n) => `총 ${TOTAL}문제 중 ${n}문제 응답 완료`,
+          count: (n, total) => `총 ${total}문제 중 ${n}번째 문제`,
+          progressText: (n, total) => `총 ${total}문제 중 ${n}문제 응답 완료`,
           score: (n) => `점수: ${n}`,
           correctLabel: '정답', wrongLabel: '선택한 답, 오답',
           good: '✓ 정답입니다! 멋진 실력이에요.',
@@ -796,12 +807,13 @@
       const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
       let current = 0;
-      let score = 0;
       let answered = false;
-      let history = [];
+      let mainRound = { indices: QUESTIONS.map((_, i) => i), score: 0, history: [] };
+      let round = mainRound;
       let language = 'en';
 
       function questionAt(index) {
+        index = round.indices[index];
         return language === 'ko'
           ? { ...QUESTIONS[index], ...KOREAN_QUESTIONS[index] }
           : QUESTIONS[index];
@@ -818,10 +830,10 @@
         button.textContent = language === 'en' ? '한국어' : 'English';
         button.lang = language === 'en' ? 'ko' : 'en';
         button.setAttribute('aria-label', language === 'en' ? '한국어로 전환' : 'Switch to English');
-        progress.setAttribute('aria-label', text.progress);
+        updateRoundActions();
         optionsEl.setAttribute('aria-label', text.choices);
         updateScore(false);
-        updateProgress(history.length);
+        updateProgress(round.history.length);
         if (!quizScreen.hidden) renderQuestion(false);
         if (!resultsScreen.hidden) renderResults();
         else announcer.textContent = '';
@@ -854,14 +866,16 @@
       }
 
       function updateProgress(answeredCount) {
-        const pct = (answeredCount / TOTAL) * 100;
+        const total = round.indices.length;
+        const pct = (answeredCount / total) * 100;
         progressFill.style.width = pct + '%';
+        progress.setAttribute('aria-valuemax', String(total));
         progress.setAttribute('aria-valuenow', String(answeredCount));
-        progress.setAttribute('aria-valuetext', TEXT[language].progressText(answeredCount));
+        progress.setAttribute('aria-valuetext', TEXT[language].progressText(answeredCount, total));
       }
 
       function updateScore(animate) {
-        scoreText.textContent = TEXT[language].score(score);
+        scoreText.textContent = TEXT[language].score(round.score);
         if (animate) {
           scorePill.classList.remove('bump');
           void scorePill.offsetWidth;
@@ -870,11 +884,36 @@
       }
 
       function startQuiz() {
+        mainRound = { indices: QUESTIONS.map((_, i) => i), score: 0, history: [] };
+        round = mainRound;
+        startRound();
+      }
+
+      function startPractice() {
+        const indices = round.indices.filter((_, i) => !round.history[i].ok);
+        if (!indices.length) return;
+        round = { indices, score: 0, history: [] };
+        startRound();
+      }
+
+      function updateRoundActions() {
+        const text = TEXT[language];
+        const practice = round !== mainRound;
+        const hasMistakes = round.history.some((h) => !h.ok);
+        $('practice-label').hidden = !practice;
+        progress.setAttribute('aria-label', practice ? text.practiceProgress : text.progress);
+        $('practice-btn').hidden = !hasMistakes;
+        $('review-practice-btn').hidden = !hasMistakes;
+        ['restart-btn', 'review-restart-btn'].forEach((id) => {
+          $(id).querySelector('[data-i18n="restart"]').textContent = practice ? text.fullQuiz : text.restart;
+        });
+      }
+
+      function startRound() {
         current = 0;
-        score = 0;
-        history = [];
         answered = false;
         announcer.textContent = '';
+        updateRoundActions();
         updateScore(false);
         updateProgress(0);
         show(quizScreen);
@@ -883,7 +922,7 @@
 
       function renderQuestion(focus = true) {
         const item = questionAt(current);
-        qCount.textContent = TEXT[language].count(current + 1);
+        qCount.textContent = TEXT[language].count(current + 1, round.indices.length);
         topicEl.textContent = item.topic;
         questionEl.textContent = item.q;
         feedbackEl.className = 'feedback';
@@ -908,7 +947,7 @@
           optionsEl.appendChild(li);
         });
 
-        if (answered) renderAnswer(history[current].chosen);
+        if (answered) renderAnswer(round.history[current].chosen);
         if (focus) questionEl.focus({ preventScroll: true });
       }
 
@@ -919,11 +958,11 @@
         const item = questionAt(current);
         const isCorrect = index === item.answer;
         if (isCorrect) {
-          score++;
+          round.score++;
           updateScore(true);
           burstFrom(optionsEl.querySelectorAll('.option')[index]);
         }
-        history.push({ chosen: index, ok: isCorrect });
+        round.history.push({ chosen: index, ok: isCorrect });
         updateProgress(current + 1);
         renderAnswer(index);
         nextBtn.focus({ preventScroll: true });
@@ -962,7 +1001,7 @@
         fact.textContent = item.fact;
         feedbackEl.append(title, fact);
 
-        const isLast = current === TOTAL - 1;
+        const isLast = current === round.indices.length - 1;
         nextBtn.innerHTML = isLast
           ? `${text.results} <span aria-hidden="true">🏁</span>`
           : `${text.next} <span aria-hidden="true">→</span>`;
@@ -994,7 +1033,7 @@
 
       function next() {
         if (!answered) return;
-        if (current < TOTAL - 1) {
+        if (current < round.indices.length - 1) {
           current++;
           answered = false;
           renderQuestion();
@@ -1006,7 +1045,7 @@
       function showResults() {
         show(resultsScreen);
         renderResults();
-        const pct = Math.round((score / TOTAL) * 100);
+        const pct = Math.round((round.score / round.indices.length) * 100);
 
         const ring = $('ring');
         // rAF is paused in hidden tabs, so draw the final value immediately there.
@@ -1028,17 +1067,24 @@
 
       function renderResults(announce = true) {
         const text = TEXT[language];
-        const pct = Math.round((score / TOTAL) * 100);
-        $('ring-score').textContent = `${score}/${TOTAL}`;
+        const practice = round !== mainRound;
+        const score = round.score;
+        const total = round.indices.length;
+        const pct = Math.round((score / total) * 100);
+        updateRoundActions();
+        $('results-title').textContent = practice ? text.practiceComplete : text.complete;
+        $('ring-score').textContent = `${score}/${total}`;
         $('ring-pct').textContent = `${pct}%`;
         const rankIndex = score === TOTAL ? 0 : score >= 8 ? 1 : score >= 5 ? 2 : 3;
         const [rank, msg] = text.ranks[rankIndex];
+        $('rank').hidden = practice;
         $('rank').textContent = rank;
-        $('results-summary').textContent = text.summary(score, pct, msg);
+        const summary = practice ? text.practiceSummary(score, total) : text.summary(score, pct, msg);
+        $('results-summary').textContent = summary;
 
         const review = $('review');
         review.innerHTML = '';
-        history.forEach((h, i) => {
+        round.history.forEach((h, i) => {
           const item = questionAt(i);
           const li = document.createElement('li');
           const icon = document.createElement('span');
@@ -1061,7 +1107,7 @@
         });
 
         announcer.textContent = announce
-          ? text.announcement(score, rank.replace(/^\S+\s/, ''))
+          ? (practice ? `${text.practiceComplete} ${summary}` : text.announcement(score, rank.replace(/^\S+\s/, '')))
           : '';
       }
 
@@ -1069,7 +1115,7 @@
         const text = TEXT[language];
         const list = $('review-detail');
         list.innerHTML = '';
-        history.forEach((h, i) => {
+        round.history.forEach((h, i) => {
           const item = questionAt(i);
           const card = document.createElement('li');
           card.className = 'review-card' + (h.ok ? ' is-ok' : '');
@@ -1139,7 +1185,7 @@
         if (quizScreen.hidden || e.altKey || e.ctrlKey || e.metaKey) return;
         const k = e.key.toLowerCase();
         const map = { '1': 0, '2': 1, '3': 2, '4': 3, a: 0, b: 1, c: 2, d: 3 };
-        if (!answered && k in map && map[k] < QUESTIONS[current].options.length) {
+        if (!answered && k in map && map[k] < questionAt(current).options.length) {
           e.preventDefault();
           choose(map[k]);
         } else if (answered && k === 'n') {
@@ -1155,6 +1201,8 @@
       $('review-back').addEventListener('click', backToResults);
       $('review-back-top').addEventListener('click', backToResults);
       $('review-restart-btn').addEventListener('click', startQuiz);
+      $('practice-btn').addEventListener('click', startPractice);
+      $('review-practice-btn').addEventListener('click', startPractice);
       $('language-btn').addEventListener('click', () => {
         language = language === 'en' ? 'ko' : 'en';
         applyLanguage();
